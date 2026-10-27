@@ -43,6 +43,9 @@ pub fn render(
     let mut names = vec![];
     let mut names_cfg_attr = vec![];
     let mut variants = TokenStream::new();
+    let mut mask_words = vec![];
+    let mut mask_cfg_bits = TokenStream::new();
+    let mut mask_has_cfg = false;
 
     // Current position in the vector table
     let mut pos = 0;
@@ -88,6 +91,20 @@ pub fn render(
             not_feature_attribute.extend(quote! { feature = #feature_name, });
         }
         let not_feature_attribute = quote! { #[cfg(not(all(#not_feature_attribute)))] };
+
+        let word = (interrupt.0.value / 32) as usize;
+        let bit = interrupt.0.value % 32;
+        if mask_words.len() <= word {
+            mask_words.resize(word + 1, 0u32);
+        }
+        mask_words[word] |= 1 << bit;
+        mask_has_cfg |= feature_attribute_flag;
+        let word_lit = util::unsuffixed(word as u32);
+        let bit_lit = util::unsuffixed(bit);
+        mask_cfg_bits.extend(quote! {
+            #feature_attribute
+            { mask[#word_lit] |= 1 << #bit_lit; }
+        });
 
         variants.extend(quote! {
             #[doc = #description]
@@ -279,6 +296,27 @@ pub fn render(
         (quote!(#[repr(u16)]), quote!(#self_token as u16))
     };
 
+    let mask_len = util::unsuffixed(mask_words.len() as u64);
+    let mask_value = if mask_has_cfg {
+        quote! {
+            {
+                #[allow(unused_mut)]
+                let mut mask = [0; #mask_len];
+                #mask_cfg_bits
+                mask
+            }
+        }
+    } else {
+        let words = mask_words.iter().map(|&w| util::hex(w as u64));
+        quote!([#(#words),*])
+    };
+    let mask_const = quote! {
+        /// Bitmask of the interrupt numbers that name a variant.
+        ///
+        /// Bit `n % 32` of word `n / 32` is set if interrupt number `n` is a variant of [`Interrupt`].
+        pub const MASK: [u32; #mask_len] = #mask_value;
+    };
+
     let defmt = config
         .impl_defmt
         .as_ref()
@@ -330,6 +368,7 @@ pub fn render(
                     pub struct TryFromInterruptError(());
 
                     impl Interrupt {
+                        #mask_const
 
                         /// Attempt to convert a given value into an `Interrupt`
                         #[inline]
@@ -352,6 +391,7 @@ pub fn render(
                     pub struct TryFromInterruptError(());
 
                     impl Interrupt {
+                        #mask_const
 
                         /// Attempt to convert a given value into an `Interrupt`
                         #[inline]
