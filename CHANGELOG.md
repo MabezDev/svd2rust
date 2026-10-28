@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Add `--skip-peripherals-struct` flag to skip generating the `Peripherals`
   struct, its `take`/`steal` impl and the `DEVICE_PERIPHERALS` static
+- Add `Interrupt::MASK` constant with the bits of the valid interrupt numbers
+  for RISC-V and Xtensa targets
 
 ## [v0.37.1] - 2025-10-17
 
